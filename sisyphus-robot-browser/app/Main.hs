@@ -17,20 +17,17 @@ main = mainWidgetWithHead elHead elBody
 
 elHead :: (MonadWidget t m) => m ()
 elHead = do
-    -- elAttr "meta" ("charset" =: "utf-8") blank
     el "title" $ text "Sisyphus Robot"
 
 elBody :: forall t m. (MonadWidget t m) => m ()
 elBody = do
     el "div" $ do
         dynPbs <- elLoad
-        elSave dynPbs
-        let (<$$>) = flip (<$>)
-        dyn $ dynPbs <$$> \(pbs :: Pbs) -> do
-            pbsIn <- pbsInput $ PbsInputConfig pbs
-            display $ _pbsInput_value pbsIn
+        dyn $ dynPbs `ffor` \(pbs :: Pbs) -> do
+            rec elSave (_pbsInput_value pbsIn)
+                pbsIn <- pbsInput $ PbsInputConfig pbs
+            el "div" $ display (_pbsInput_value pbsIn)
             pure pbsIn
-
         blank
     where
     elLoad :: (MonadWidget t m) => m (Dynamic t Pbs)
@@ -42,7 +39,9 @@ elBody = do
     elSave :: (MonadWidget t m) => Dynamic t Pbs -> m (Event t ())
     elSave dynPbs = do
         evSaveBtn <- button "Save to server"
-        putThe $ tagPromptlyDyn dynPbs evSaveBtn
+        evSaveOk <- putThe $ tagPromptlyDyn dynPbs evSaveBtn
+        -- TODO notify about saved state
+        pure evSaveOk
     elRecord :: (MonadWidget t m) =>
         Dynamic t Pbs ->
         Dynamic t PbsRecord ->
@@ -88,7 +87,7 @@ pbsRecordInput PbsRecordInputConfig{..} = el "tr" $ do
     ti <- el "td" $ do
         textInput def { _textInputConfig_initialValue = initName }
 
-    let evCommit = keypress Enter ti
+    let evCommit = () <$ _textInput_input ti
     let evName = tagPromptlyDyn (value ti) evCommit
     let evRecord = PbsRecord initHierCode initFlatCode <$> evName
     dynRecord <- holdDyn _pbsRecordInputConfig_initialValue evRecord
