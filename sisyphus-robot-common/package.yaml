@@ -1,0 +1,51 @@
+name:                sisyphus-robot-common
+version:             0.0.0
+github:              "Zankoku-Okuno/sisyphus-robot-common"
+license:             BSD3
+author:              "Okuno Zankoku"
+maintainer:          "zankoku.okuno@gmail.com"
+copyright:           "Okuno Zankoku"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/Zankoku-Okuno/sisyphus-robot-common#readme>
+
+dependencies:
+- base >=4.7 && <5
+- aeson ==1.*
+- data-default
+- servant ==0.11.*
+- servant-lucid
+- text ==1.2.*
+
+default-extensions:
+- OverloadedStrings
+- RecordWildCards
+- DataKinds
+- TypeOperators
+- TypeApplications
+- ScopedTypeVariables
+- DeriveGeneric
+
+library:
+  source-dirs: src
+
+tests:
+  sisyphus-robot-common-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - sisyphus-robot-common
