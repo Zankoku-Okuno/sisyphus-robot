@@ -22,25 +22,29 @@ elHead = do
 elBody :: (MonadWidget t m) => m ()
 elBody = do
     el "div" $ do
-        evPostBuild <- getPostBuild
-        evLoadBtn <- button "Load from server"
-        evLoadRsp <- getThe $ leftmost [evLoadBtn, evPostBuild]
-        dynPbs <- foldDyn (\n p -> maybe p id n) def evLoadRsp
-        evSaveBtn <- button "Save to server"
-        putThe $ tagDyn dynPbs evSaveBtn -- FIXME tagPromptyDyn
+        dynPbs <- elLoad
+        elSave dynPbs
         el "table" $ do
             el "thead" $ el "tr" $ do
                 el "th" $ text "Code"
                 el "th" $ text "Name"
             el "tbody" $ do
-                dynRecords <- records `mapDyn` dynPbs
                 let elRecord dynR = el "tr" $ do
-                        dynCode <- combineDyn displayCode dynPbs dynR
-                        dynName <- (T.unpack . name) `mapDyn` dynR
-                        el "td" $ dynText dynCode
-                        el "td" $ dynText dynName
-                simpleList dynRecords elRecord
+                        el "td" $ dynText (displayCode <$> dynPbs <*> dynR)
+                        el "td" $ dynText (name <$> dynR)
+                simpleList (records <$> dynPbs) elRecord
                 blank
+    where
+    elLoad :: (MonadWidget t m) => m (Dynamic t Pbs)
+    elLoad = do
+        evPostBuild <- getPostBuild
+        evLoadBtn <- button "Load from server"
+        evLoadRsp <- getThe $ leftmost [evLoadBtn, evPostBuild]
+        foldDyn (\n p -> maybe p id n) def evLoadRsp
+    elSave :: (MonadWidget t m) => Dynamic t Pbs -> m (Event t ())
+    elSave dynPbs = do
+        evSaveBtn <- button "Save to server"
+        putThe $ tagPromptlyDyn dynPbs evSaveBtn
 
 
 getThe :: (MonadWidget t m) => Event t () -> m (Event t (Maybe Pbs))
@@ -48,7 +52,7 @@ getThe ev = do
     rsp <- performRequestAsync $ build_getThe <$ ev
     pure $ from_getThe <$> rsp
 
-build_getThe :: XhrRequest
+build_getThe :: XhrRequest ()
 build_getThe = XhrRequest "GET" "/the" def
 
 from_getThe :: XhrResponse -> Maybe Pbs
@@ -59,5 +63,5 @@ putThe ev = do
     rsp <- performRequestAsync $ build_putThe <$> ev
     pure $ () <$ rsp
 
-build_putThe :: Pbs -> XhrRequest
+build_putThe :: Pbs -> XhrRequest Text
 build_putThe pbs = postJson "/the" pbs

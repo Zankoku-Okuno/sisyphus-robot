@@ -24,8 +24,8 @@ dependencies:
 - sisyphus-robot-common
 - aeson ==1.*
 - text ==1.*
-- reflex == 0.5.*
-- reflex-dom == 0.4.*
+- reflex ==0.5.*
+- reflex-dom ==0.4.*
 # TODO - servant-reflex ==0.3.4, once I'm using reflex 0.5
 
 default-extensions:

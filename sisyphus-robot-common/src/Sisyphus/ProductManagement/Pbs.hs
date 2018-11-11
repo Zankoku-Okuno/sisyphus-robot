@@ -1,8 +1,9 @@
 module Sisyphus.ProductManagement.Pbs where
 
-import Data.List
+import Data.Monoid
 import Data.Default
 import Data.Text (Text)
+import qualified Data.Text as T
 import Data.Aeson
 import GHC.Generics
 
@@ -35,11 +36,12 @@ instance Ord PbsRecord where
 code :: PbsRecord -> ([Word], Word)
 code PbsRecord{..} = (hierCode, flatCode)
 
-displayCode :: Pbs -> PbsRecord -> String
+displayCode :: Pbs -> PbsRecord -> Text
 displayCode Pbs{..} PbsRecord{..} =
-    intercalate "." (show <$> hierCode) ++ "-" ++ padLeft '0' (length . show $ maxFlatCode) (show flatCode)
+    -- FIXME use a decent texty show
+    T.intercalate "." (T.pack . show <$> hierCode) <> "-" <> padLeft '0' (length . show $ maxFlatCode) (show flatCode)
     where
-    padLeft c len str = replicate (fromIntegral len - length str) c ++ str
+    padLeft c len str = T.pack $ replicate (fromIntegral len - length str) c <> str
 
 instance Default Pbs where
     def = Pbs
