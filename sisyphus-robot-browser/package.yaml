@@ -29,6 +29,7 @@ dependencies:
 # TODO - servant-reflex ==0.3.4, once I'm using reflex 0.5
 
 default-extensions:
+- LambdaCase
 - OverloadedStrings
 - RecordWildCards
 - RecursiveDo

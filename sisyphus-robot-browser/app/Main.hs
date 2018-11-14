@@ -1,6 +1,7 @@
 module Main where
 
 import Data.Maybe
+import Control.Monad
 import Data.Text (Text)
 import qualified Data.Text as T
 
@@ -27,6 +28,7 @@ elBody = do
             rec elSave pbsDyn'
                 pbsIn <- el "table" $ do
                     el "thead" $ el "tr" $ do
+                        el "th" $ blank
                         el "th" $ text "Code"
                         el "th" $ text "Name"
                     el "tbody" $ do

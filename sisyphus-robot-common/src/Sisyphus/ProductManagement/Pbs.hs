@@ -2,11 +2,14 @@ module Sisyphus.ProductManagement.Pbs
     ( Pbs(..)
     , PbsRecord(..)
     , freshPbs
+    , addFreshAssembly
+    , addFreshPart
     , displayCode
     ) where
 
 import Data.List
 import Data.Monoid
+import Control.Monad
 import Data.Default
 import Data.Text (Text)
 import qualified Data.Text as T
@@ -36,6 +39,42 @@ data PbsRecord = PbsRecord
     deriving(Generic, Read, Show)
 instance ToJSON PbsRecord
 instance FromJSON PbsRecord
+
+
+
+
+addFreshPart :: Pbs-> Maybe Pbs
+addFreshPart Leaves{..} = do
+    let partNo' = fromIntegral (length _records) + 1
+    guard $ partNo' <= maxFlatCode _info
+    let record' = PbsRecord
+            { maxFlatCode = maxFlatCode _info
+            , code = (hierCode _info, Just partNo')
+            , name = ""
+            }
+        _records' = _records ++ [record']
+    pure $ Leaves _info _records'
+addFreshPart Tree{_subtrees = [], ..} = do
+    addFreshPart $ Leaves _info []
+addFreshPart _ = Nothing
+addFreshAssembly :: Pbs-> Maybe Pbs
+addFreshAssembly Tree{..} = do
+    let asmNo' = fromIntegral (length _subtrees) + 1
+        subtree' = Tree
+            { _info = PbsRecord
+                { maxFlatCode = maxFlatCode _info
+                , code = (hierCode _info ++ [asmNo'], Nothing)
+                , name = ""
+                }
+            , _subtrees = []
+            }
+        subtrees' = _subtrees ++ [subtree']
+    pure $ Tree _info subtrees'
+addFreshAssembly _ = Nothing
+-- TODO
+-- removeByCode
+-- updateByCode
+-- hide the internals behind this interface so I can control Pbs invariants
 
 
 hierCode = fst . code
