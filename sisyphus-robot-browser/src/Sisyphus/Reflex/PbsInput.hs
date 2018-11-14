@@ -1,5 +1,6 @@
 module Sisyphus.Reflex.PbsInput where
 
+import Control.Arrow
 import Control.Monad
 import Reflex.Dom
 
@@ -17,11 +18,21 @@ data PbsInputConfig t = PbsInputConfig
 pbsInput :: forall t m. (MonadWidget t m) => PbsInputConfig t -> m (PbsInput t)
 pbsInput PbsInputConfig{..} = do
     let initPbs = _pbsInputConfig_initialValue
-    rowIns <- forM (records initPbs) $ \row -> do
-        pbsRecordInput (PbsRecordInputConfig initPbs row)
-    let dynRows = sequence (_pbsRecordInput_value <$> rowIns) :: Dynamic t [PbsRecord]
-        dynPbs = Pbs (maxFlatCode initPbs) <$> dynRows :: Dynamic t Pbs
-    pure $ PbsInput dynPbs
+    pbsIn <- pbsRecordInput $ PbsRecordInputConfig (_info initPbs)
+    let dynRecord = _pbsRecordInput_value pbsIn
+    case initPbs of
+        Tree _ initSubtrees -> do
+            pbsIns <- forM initSubtrees $ \subtree -> do
+                pbsInput (PbsInputConfig subtree)
+            let dynSubtrees = sequence (_pbsInput_value <$> pbsIns)
+                dynPbs = Tree <$> dynRecord <*> dynSubtrees
+            pure $ PbsInput dynPbs
+        Leaves _ initRecords -> do
+            recordIns <- forM initRecords $ \record -> do
+                pbsRecordInput (PbsRecordInputConfig record)
+            let dynRecords = sequence (_pbsRecordInput_value <$> recordIns)
+                dynLeaves = Leaves <$> dynRecord <*> dynRecords
+            pure $ PbsInput dynLeaves
 
 
 data PbsRecordInput t = PbsRecordInput
@@ -29,21 +40,18 @@ data PbsRecordInput t = PbsRecordInput
     }
 
 data PbsRecordInputConfig t = PbsRecordInputConfig
-    { _pbsRecordInputConfig_parent :: Pbs
-    , _pbsRecordInputConfig_initialValue :: PbsRecord
+    { _pbsRecordInputConfig_initialValue :: PbsRecord
     }
 
 pbsRecordInput :: (MonadWidget t m) => PbsRecordInputConfig t -> m (PbsRecordInput t)
 pbsRecordInput PbsRecordInputConfig{..} = el "tr" $ do
-    let initHierCode = hierCode _pbsRecordInputConfig_initialValue
-    let initFlatCode = flatCode _pbsRecordInputConfig_initialValue
-    el "td" $ text (displayCode _pbsRecordInputConfig_parent _pbsRecordInputConfig_initialValue)
-    let initName = name _pbsRecordInputConfig_initialValue
+    let initRecord = _pbsRecordInputConfig_initialValue
+    el "td" $ text (displayCode initRecord)
     ti <- el "td" $ do
-        textInput def { _textInputConfig_initialValue = initName }
+        textInput def { _textInputConfig_initialValue = name initRecord }
 
     let evCommit = () <$ _textInput_input ti
     let evName = tagPromptlyDyn (value ti) evCommit
-    let evRecord = PbsRecord initHierCode initFlatCode <$> evName
-    dynRecord <- holdDyn _pbsRecordInputConfig_initialValue evRecord
+    let evRecord = (\name -> initRecord{name = name}) <$> evName -- FIXME foldDyn ($) to update
+    dynRecord <- holdDyn initRecord evRecord
     pure $ PbsRecordInput dynRecord

@@ -1,5 +1,11 @@
-module Sisyphus.ProductManagement.Pbs where
+module Sisyphus.ProductManagement.Pbs
+    ( Pbs(..)
+    , PbsRecord(..)
+    , freshPbs
+    , displayCode
+    ) where
 
+import Data.List
 import Data.Monoid
 import Data.Default
 import Data.Text (Text)
@@ -9,42 +15,48 @@ import GHC.Generics
 
 import Data.Function
 
+type Codename = ()
+type HierCode = [Word]
+type FlatCode = Word
+type Code = (HierCode, Maybe FlatCode)
 
-data Pbs = Pbs
-    { maxFlatCode :: Word
-    , records :: [PbsRecord] -- FIXME use Seq; also make sure this is always ordered
-    }
+
+data Pbs
+    = Tree   { _info :: PbsRecord, _subtrees :: [Pbs] }
+    | Leaves { _info :: PbsRecord, _records :: [PbsRecord] }
     deriving(Generic, Read, Show)
 instance ToJSON Pbs
 instance FromJSON Pbs
 
 data PbsRecord = PbsRecord
-    { hierCode :: [Word]
-    , flatCode :: Word
+    { maxFlatCode :: Word
+    , code :: Code
     , name :: Text
     }
     deriving(Generic, Read, Show)
 instance ToJSON PbsRecord
 instance FromJSON PbsRecord
 
-instance Eq PbsRecord where
-    (==) = (==) `on` code
-instance Ord PbsRecord where
-    compare = compare `on` code
+
+hierCode = fst . code
+flatCode = snd . code
 
 
-code :: PbsRecord -> ([Word], Word)
-code PbsRecord{..} = (hierCode, flatCode)
-
-displayCode :: Pbs -> PbsRecord -> Text
-displayCode Pbs{..} PbsRecord{..} =
-    -- FIXME use a decent texty show
-    T.intercalate "." (T.pack . show <$> hierCode) <> "-" <> padLeft '0' (length . show $ maxFlatCode) (show flatCode)
+freshPbs :: Codename -> Text -> Pbs
+freshPbs codename name = Tree info []
     where
-    padLeft c len str = T.pack $ replicate (fromIntegral len - length str) c <> str
-
-instance Default Pbs where
-    def = Pbs
-        { maxFlatCode = 9999
-        , records = []
+    info = PbsRecord
+        { maxFlatCode = 999
+        , code = ([], Nothing)
+        , name = name
         }
+
+
+displayCode :: PbsRecord -> Text
+displayCode info = renderHier (hierCode info) <> renderFlat (flatCode info)
+    where
+    renderHier [] = ""
+    renderHier hier = T.intercalate "." (T.pack . show <$> hier)
+    renderFlat Nothing = ""
+    renderFlat (Just flat) = "-" <> padLeft '0' (length . show $ maxFlatCode info) (show flat)
+    padLeft c len str = T.pack $ replicate (fromIntegral len - length str) c <> str

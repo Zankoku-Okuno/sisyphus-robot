@@ -28,13 +28,18 @@ dependencies:
 - text ==1.2.*
 
 default-extensions:
+- NamedFieldPuns
 - OverloadedStrings
+- PatternSynonyms
 - RecordWildCards
+- TupleSections
+- ViewPatterns
 - DataKinds
 - TypeOperators
 - TypeApplications
 - ScopedTypeVariables
 - DeriveGeneric
+- DuplicateRecordFields
 
 library:
   source-dirs: src

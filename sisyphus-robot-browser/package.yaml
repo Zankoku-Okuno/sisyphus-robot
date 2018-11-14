@@ -32,6 +32,7 @@ default-extensions:
 - OverloadedStrings
 - RecordWildCards
 - RecursiveDo
+- TupleSections
 - ScopedTypeVariables
 - FlexibleContexts
 - TypeFamilies

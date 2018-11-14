@@ -24,14 +24,15 @@ elBody = do
     el "div" $ do
         dynPbs <- elLoad
         dyn $ dynPbs `ffor` \(pbs :: Pbs) -> do
-            rec elSave (_pbsInput_value pbsIn)
+            rec elSave pbsDyn'
                 pbsIn <- el "table" $ do
                     el "thead" $ el "tr" $ do
                         el "th" $ text "Code"
                         el "th" $ text "Name"
                     el "tbody" $ do
                         pbsInput $ PbsInputConfig pbs
-            el "div" $ display (_pbsInput_value pbsIn)
+                let pbsDyn' = _pbsInput_value pbsIn :: Dynamic t Pbs
+            el "div" $ display pbsDyn'
             pure pbsIn
         blank
     where
@@ -40,21 +41,13 @@ elBody = do
         evPostBuild <- getPostBuild
         evLoadBtn <- button "Load from server"
         evLoadRsp <- getThe $ leftmost [evLoadBtn, evPostBuild]
-        foldDyn (\n p -> maybe p id n) def evLoadRsp
+        foldDyn (\n p -> maybe p id n) (freshPbs undefined "New Product") evLoadRsp
     elSave :: (MonadWidget t m) => Dynamic t Pbs -> m (Event t ())
     elSave dynPbs = do
         evSaveBtn <- button "Save to server"
         evSaveOk <- putThe $ tagPromptlyDyn dynPbs evSaveBtn
         -- TODO notify about saved state
         pure evSaveOk
-    elRecord :: (MonadWidget t m) =>
-        Dynamic t Pbs ->
-        Dynamic t PbsRecord ->
-        m (Event t (PbsRecordInput t))
-    elRecord dynPbs dynRow =  do
-        let dynConfig = PbsRecordInputConfig <$> dynPbs <*> dynRow
-        evPbsIn <- dyn $ pbsRecordInput <$> dynConfig
-        pure evPbsIn
 
 
 
