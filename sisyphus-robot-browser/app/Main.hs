@@ -29,6 +29,7 @@ elBody = do
                 pbsIn <- el "table" $ do
                     el "thead" $ el "tr" $ do
                         el "th" $ blank
+                        el "th" $ blank
                         el "th" $ text "Code"
                         el "th" $ text "Name"
                     el "tbody" $ do
