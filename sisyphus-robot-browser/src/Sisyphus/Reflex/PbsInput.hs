@@ -10,7 +10,7 @@ import Sisyphus.ProductManagement.Pbs
 
 data PbsInput t = PbsInput
     { _pbsInput_value :: Dynamic t Pbs
-    , _pbsInput_delete :: Event t Code
+    , _pbsInput_delete :: Event t ()
     }
 
 data PbsInputConfig t = PbsInputConfig
@@ -22,51 +22,8 @@ pbsInput PbsInputConfig{..} = do
     let initPbs = _pbsInputConfig_initialValue
     rec dynPbs <- foldDynMaybe ($) initPbs evUpdate
         dynMajor <- holdDyn initPbs $ tagPromptlyDyn dynPbs evMajor
-        evEvPair <- dyn $ dynMajor `ffor` \case
-            Tree initRecord initSubtrees -> do
-                (evAdd, evDel, dynRecord) <- el "tr" $ do
-                    evAdd <- el "td" $ do
-                        evAddAsm <- button "+asm"
-                        evAddPart <- if null initSubtrees
-                                        then button "+part"
-                                        else pure never
-                        pure $ leftmost
-                            [ addFreshPart <$ evAddPart
-                            , addFreshAssembly <$ evAddAsm
-                            ]
-                    recordIn <- pbsRecordInput $ PbsRecordInputConfig initRecord
-                    let dynRecord = _pbsRecordInput_value recordIn
-                        evDel = _pbsRecordInput_delete recordIn
-                    pure (evAdd, evDel, dynRecord)
-                subtreeIns <- forM initSubtrees $ \initSubtree -> do
-                    pbsInput (PbsInputConfig initSubtree)
-                let dynSubtrees = sequence (_pbsInput_value <$> subtreeIns)
-                    dynInner = Tree <$> dynRecord <*> dynSubtrees
-                    evInner = const . Just <$> updated dynInner
-                let evDelCodes = _pbsInput_delete <$> subtreeIns
-                    evDels = (removeByCode <$>) <$> evDelCodes
-                let evMajor = leftmost $ evDels ++ [evAdd] -- FIXME leftmost? really?
-                pure $ (leftmost [Left <$> evMajor, Right <$> evInner], evDel)
-            Leaves initRecord initRecords -> do
-                (evAdd, evDel, dynRecord) <- el "tr" $ do
-                    evAdd <- el "td" $ do
-                        evAddPart <- button "+part"
-                        pure $ addFreshPart <$ evAddPart
-                    recordIn <- pbsRecordInput $ PbsRecordInputConfig initRecord
-                    let dynRecord = _pbsRecordInput_value recordIn
-                        evDel = _pbsRecordInput_delete recordIn
-                    pure (evAdd, evDel, dynRecord)
-                recordIns <- forM initRecords $ \initRecord -> do
-                    el "tr" $ do
-                        el "td" blank
-                        pbsRecordInput (PbsRecordInputConfig initRecord)
-                let dynRecords = sequence (_pbsRecordInput_value <$> recordIns)
-                    dynInner = Leaves <$> dynRecord <*> dynRecords
-                    evInner = const . Just <$> updated dynInner
-                let evDelCodes = _pbsRecordInput_delete <$> recordIns
-                    evDels = (removeByCode <$>) <$> evDelCodes
-                let evMajor = leftmost $ evDels ++ [evAdd] -- FIXME leftmost? really?
-                pure $ (leftmost [Left <$> evMajor, Right <$> evInner], evDel)
+        evEvPair <- dyn $ dynMajor `ffor` \pbs -> do
+            _pbsInputRow pbs
         let (evEvUpdateE, evEvDel) = splitE evEvPair
         evUpdateE <- switchHoldPromptly never evEvUpdateE
         evDel <- switchHoldPromptly never evEvDel
@@ -79,34 +36,126 @@ pbsInput PbsInputConfig{..} = do
         , _pbsInput_delete = evDel
         }
 
+type PbsUpdate = Pbs -> Maybe Pbs
+_pbsInputRow :: forall t m. (MonadWidget t m) => Pbs -> m (Event t (Either PbsUpdate PbsUpdate), Event t ())
+_pbsInputRow initPbs = do
+    let initCtx = ctx initPbs
+        initChildren = children initPbs
+    (evUpdateE, evDelSelf) <- case the initPbs of
+        Top{..} -> do
+            -- FIXME edit the context up here instead of the record, once Top has no record
+            (evAdd, recordIn) <- el "tr" $ do
+                evAdd <- el "td" $ do
+                    evAddAsm <- addAsmBtn
+                    pure $ addFreshAssembly <$ evAddAsm
+                recordIn <- pbsRecordInput PbsRecordInputConfig
+                    { _pbsRecordInputConfig_initialValue = _record
+                    , _pbsRecordInputConfig_context = initCtx
+                    }
+                pure (evAdd, recordIn)
+            subasmIns <- forM initChildren $ \initSubasm -> do
+                pbsInput (PbsInputConfig initSubasm)
+
+            let dynRecord = _pbsRecordInput_value recordIn
+                dynChildren = sequence ((the <$>) . _pbsInput_value <$> subasmIns)
+                evDelIxs = zipWith (<$) [0..] (_pbsInput_delete <$> subasmIns)
+                evDelChild = removeByIndex <$> leftmost evDelIxs
+            let dynInner = Pbs initCtx <$> (Top <$> dynRecord <*> dynChildren)
+                evInner = const . Just <$> updated dynInner
+                evMajor = leftmost [evAdd, evDelChild]
+                evUpdateE = leftmost [Left <$> evMajor, Right <$> evInner]
+            pure (evUpdateE, never)
+        Tree{..} -> do
+            (evAdd, recordIn, evDelSelf) <- el "tr" $ do
+                (evAdd, evDelSelf) <- el "td" $ do
+                    evAddAsm <- addAsmBtn
+                    evAddPart <- if null _subassemblies
+                        then addPartBtn
+                        else pure never
+                    evDelSelf <- delBtn
+                    let evAdd = leftmost [addFreshAssembly <$ evAddAsm, addFreshPart <$ evAddPart]
+                    pure (evAdd, evDelSelf)
+                recordIn <- pbsRecordInput PbsRecordInputConfig
+                    { _pbsRecordInputConfig_initialValue = _record
+                    , _pbsRecordInputConfig_context = initCtx
+                    }
+                pure (evAdd, recordIn, evDelSelf)
+            subasmIns <- forM initChildren $ \initSubasm -> do
+                pbsInput (PbsInputConfig initSubasm)
+
+            let dynRecord = _pbsRecordInput_value recordIn
+                dynChildren = sequence ((the <$>) . _pbsInput_value <$> subasmIns)
+                evDelIxs = zipWith (<$) [0..] (_pbsInput_delete <$> subasmIns)
+                evDelChild = removeByIndex <$> leftmost evDelIxs
+            let dynInner = Pbs initCtx <$> (Tree <$> dynRecord <*> dynChildren)
+                evInner = const . Just <$> updated dynInner
+                evMajor = leftmost [evAdd, evDelChild]
+                evUpdateE = leftmost [Left <$> evMajor, Right <$> evInner]
+            pure (evUpdateE, evDelSelf)
+        Leaves{..} -> do
+            (evAdd, recordIn, evDelSelf) <- el "tr" $ do
+                (evAdd, evDelSelf) <- el "td" $ do
+                    evAddAsm <- if null _parts
+                        then addAsmBtn
+                        else pure never
+                    evAddPart <- addPartBtn
+                    evDelSelf <- delBtn
+                    let evAdd = leftmost [addFreshPart <$ evAddPart, addFreshAssembly <$ evAddAsm]
+                    pure (evAdd, evDelSelf)
+                recordIn <- pbsRecordInput PbsRecordInputConfig
+                    { _pbsRecordInputConfig_initialValue = _record
+                    , _pbsRecordInputConfig_context = initCtx
+                    }
+                pure (evAdd, recordIn, evDelSelf)
+            partIns <- forM initChildren $ \initPart -> do
+                pbsInput (PbsInputConfig initPart)
+
+            let dynRecord = _pbsRecordInput_value recordIn
+                dynChildren = sequence ((the <$>) . _pbsInput_value <$> partIns)
+                evDelIxs = zipWith (<$) [0..] (_pbsInput_delete <$> partIns)
+                evDelChild = removeByIndex <$> leftmost evDelIxs
+            let dynInner = Pbs initCtx <$> (Leaves <$> dynRecord <*> dynChildren)
+                evInner = const . Just <$> updated dynInner
+                evMajor = leftmost [evAdd, evDelChild]
+                evUpdateE = leftmost [Left <$> evMajor, Right <$> evInner]
+            pure (evUpdateE, evDelSelf)
+        Leaf{..} -> el "tr" $ do
+            evDelSelf <- el "td" $ delBtn
+            recordIn <- pbsRecordInput PbsRecordInputConfig
+                { _pbsRecordInputConfig_initialValue = _record
+                , _pbsRecordInputConfig_context = initCtx
+                }
+            let dynRecord = _pbsRecordInput_value recordIn
+                dynInner = Pbs initCtx . Leaf <$> dynRecord
+                evInner = const . Just <$> updated dynInner
+                evUpdateE = Right <$> evInner
+            pure (evUpdateE, evDelSelf)
+    pure (evUpdateE, evDelSelf)
+    where
+    addAsmBtn = button "↳" -- U+21b3 Downwards Arrow With Tip Rightwards
+    addPartBtn = button "+"
+    delBtn = button "🗙" -- U+1F5D9 Cancellation X
+
 
 data PbsRecordInput t = PbsRecordInput
     { _pbsRecordInput_value :: Dynamic t PbsRecord
-    , _pbsRecordInput_delete :: Event t Code
     }
 
 data PbsRecordInputConfig t = PbsRecordInputConfig
     { _pbsRecordInputConfig_initialValue :: PbsRecord
+    , _pbsRecordInputConfig_context :: PbsCtx
     }
 
 pbsRecordInput :: (MonadWidget t m) => PbsRecordInputConfig t -> m (PbsRecordInput t)
 pbsRecordInput PbsRecordInputConfig{..} = do
     let initRecord = _pbsRecordInputConfig_initialValue
-    evDeleteSelf <- el "td" $ do
-        if code initRecord == ([], Nothing)
-        then pure never
-        else do
-            evClick <- button "delete"
-            pure $ code initRecord <$ evClick
-    el "td" $ text (displayCode initRecord)
+        ctx = _pbsRecordInputConfig_context
+    el "td" $ text (displayCode ctx)
     ti <- el "td" $ do
         textInput def { _textInputConfig_initialValue = name initRecord }
 
-    let evCommit = () <$ _textInput_input ti
-    let evName = tagPromptlyDyn (value ti) evCommit
-    let evRecord = (\name -> initRecord{name = name}) <$> evName -- FIXME foldDyn ($) to update
-    dynRecord <- holdDyn initRecord evRecord
+    let dynName = _textInput_value ti
+        dynRecord = PbsRecord <$> dynName
     pure $ PbsRecordInput
         { _pbsRecordInput_value = dynRecord
-        , _pbsRecordInput_delete = evDeleteSelf
         }

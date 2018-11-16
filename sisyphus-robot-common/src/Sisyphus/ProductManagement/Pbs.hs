@@ -1,11 +1,14 @@
 module Sisyphus.ProductManagement.Pbs
     ( Pbs(..)
+    , PbsNode(..)
     , PbsRecord(..)
-    , Code, Codename, HierCode, FlatCode
+    , PbsCtx(..)
+    , Code, Codename, HierCode, FlatCode, emptyCode
     , freshPbs
     , addFreshAssembly
     , addFreshPart
-    , removeByCode
+    , removeByIndex
+    , children
     , displayCode
     ) where
 
@@ -20,108 +23,131 @@ import GHC.Generics
 
 import Data.Function
 
+
 type Codename = ()
-type HierCode = [Word]
+type HierCode = [HierCodePart]
+type HierCodePart = Word
 type FlatCode = Word
 type Code = (HierCode, Maybe FlatCode)
 
 
-data Pbs
-    = Tree   { _info :: PbsRecord, _subtrees :: [Pbs] }
-    | Leaves { _info :: PbsRecord, _records :: [PbsRecord] }
+emptyCode = ([], Nothing)
+hierCode = fst . code
+flatCode = snd . code
+
+childCode :: Code -> Either Word FlatCode -> Code
+childCode (hier, Nothing) (Left i)  = (hier ++ [i], Nothing)
+childCode (hier, Nothing) (Right i) = (hier, Just i)
+
+
+data Pbs = Pbs
+    { ctx :: PbsCtx
+    , the :: PbsNode
+    }
     deriving(Generic, Read, Show)
 instance ToJSON Pbs
 instance FromJSON Pbs
 
-data PbsRecord = PbsRecord
+data PbsCtx = PbsCtx
     { maxFlatCode :: Word
     , code :: Code
-    , name :: Text
+    }
+    deriving(Generic, Read, Show)
+instance ToJSON PbsCtx
+instance FromJSON PbsCtx
+
+data PbsNode
+    = Top    { _record :: PbsRecord, _subassemblies :: [PbsNode] } -- FIXME move the _record up into context
+    | Tree   { _record :: PbsRecord, _subassemblies :: [PbsNode] }
+    | Leaves { _record :: PbsRecord, _parts :: [PbsNode] }
+    | Leaf   { _record :: PbsRecord }
+    deriving(Generic, Read, Show)
+instance ToJSON PbsNode
+instance FromJSON PbsNode
+
+data PbsRecord = PbsRecord
+    { name :: Text
     }
     deriving(Generic, Read, Show)
 instance ToJSON PbsRecord
 instance FromJSON PbsRecord
 
 
-
-
-addFreshPart :: Pbs-> Maybe Pbs
-addFreshPart Leaves{..} = do
-    let partNo' = fromIntegral (length _records) + 1
-    guard $ partNo' <= maxFlatCode _info
-    let record' = PbsRecord
-            { maxFlatCode = maxFlatCode _info
-            , code = (hierCode _info, Just partNo')
-            , name = ""
-            }
-        _records' = _records ++ [record']
-    pure $ Leaves _info _records'
-addFreshPart Tree{_subtrees = [], ..} = do
-    addFreshPart $ Leaves _info []
-addFreshPart _ = Nothing
-addFreshAssembly :: Pbs-> Maybe Pbs
-addFreshAssembly Tree{..} = do
-    let asmNo' = fromIntegral (length _subtrees) + 1
-        subtree' = Tree
-            { _info = PbsRecord
-                { maxFlatCode = maxFlatCode _info
-                , code = (hierCode _info ++ [asmNo'], Nothing)
-                , name = ""
-                }
-            , _subtrees = []
-            }
-        subtrees' = _subtrees ++ [subtree']
-    pure $ Tree _info subtrees'
-addFreshAssembly _ = Nothing
-
-removeByCode :: Code -> Pbs -> Maybe Pbs
-removeByCode targetCode t@Tree{} = do
-    ix <- findIndex (\sub -> targetCode == (code . _info) sub) (_subtrees t)
-    let (pre, post) = splitAt ix (_subtrees t)
-        subtrees' = pre ++ drop 1 post
-    pure $ renumber t{_subtrees = subtrees'}
-removeByCode targetCode l@Leaves{} = do
-    ix <- findIndex (\r -> targetCode == code r) (_records l)
-    let (pre, post) = splitAt ix (_records l)
-        records' = pre ++ drop 1 post
-    pure $ renumber l{_records = records'}
--- TODO
--- updateByCode (i.e. update _info)
--- hide the internals behind this interface so I can control Pbs invariants
-
-renumber :: Pbs -> Pbs
-renumber pbs = go (fst . code $ _info pbs) pbs
+children :: Pbs -> [Pbs]
+children Pbs{..} = case the of
+    Top{..}    -> zipWith go (Left  <$> [1..]) _subassemblies
+    Tree{..}   -> zipWith go (Left  <$> [1..]) _subassemblies
+    Leaves{..} -> zipWith go (Right <$> [1..]) _parts
+    Leaf{}     -> []
     where
-    go code0 t@Tree{} = Tree
-        { _info = (_info t){ code = (code0, Nothing) }
-        , _subtrees = zipWith (countHier code0) [1..] (_subtrees t)
+    go code' the = Pbs
+        { ctx = ctx{ code = code ctx `childCode` code' }
+        , ..
         }
-    go code0 l@Leaves{} = Leaves
-        { _info = (_info l){ code = (code0, Nothing) }
-        , _records = zipWith (countFlat code0) [1..] (_records l)
-        }
-    countHier code0 i pbs = go (code0 ++ [i]) pbs
-    countFlat code0 i r = r{ code = (code0, Just i) }
-
-hierCode = fst . code
-flatCode = snd . code
 
 
 freshPbs :: Codename -> Text -> Pbs
-freshPbs codename name = Tree info []
+freshPbs codename name = Pbs{..}
     where
-    info = PbsRecord
-        { maxFlatCode = 999
-        , code = ([], Nothing)
-        , name = name
+    ctx = PbsCtx { maxFlatCode = 999, code = ([], Nothing) }
+    the = Top
+        { _record = PbsRecord { name = name }
+        , _subassemblies = []
         }
 
+addFreshAssembly :: Pbs-> Maybe Pbs
+addFreshAssembly Pbs{..} = do
+    the' <- case the of
+        Top{..}  -> Just Top{ _subassemblies = addKid _subassemblies, .. }
+        Tree{..} -> Just Tree{ _subassemblies = addKid _subassemblies, .. }
+        Leaves{..} -> do
+            guard $ null _parts
+            Just $ Tree{ _subassemblies = addKid [], .. }
+        -- TODO if an empty leaves, then xmute to Tree
+        _        -> Nothing
+    pure Pbs{ the = the', .. }
+    where
+    addKid :: [PbsNode] -> [PbsNode]
+    addKid _subassemblies =
+        let asmNo' = fromIntegral (length _subassemblies) + 1
+            subtree' = Tree
+                { _record = PbsRecord { name = "" }
+                , _subassemblies = []
+                }
+        in _subassemblies ++ [subtree']
 
-displayCode :: PbsRecord -> Text
-displayCode info = renderHier (hierCode info) <> renderFlat (flatCode info)
+addFreshPart :: Pbs -> Maybe Pbs
+addFreshPart Pbs{ the = Leaves{..}, .. } = do
+    let partNo' = fromIntegral (length _parts) + 1
+    guard $ partNo' <= maxFlatCode ctx
+    let record' = PbsRecord { name = "" }
+        _parts' = _parts ++ [Leaf record']
+    pure $ Pbs { the = Leaves { _parts = _parts', .. }, .. }
+addFreshPart Pbs { the = Tree{..}, .. } = do
+    guard $ null _subassemblies
+    addFreshPart $ Pbs { the = Leaves{ _parts = [], ..}, .. }
+addFreshPart _ = Nothing
+
+removeByIndex :: Int -> Pbs -> Maybe Pbs
+removeByIndex ix pbs = do
+    guard $ 0 <= ix && ix < length (children pbs)
+    let the' = case the pbs of
+            Top{..}    -> Top{ _subassemblies = deleteIndex ix _subassemblies, .. }
+            Tree{..}   -> Tree{ _subassemblies = deleteIndex ix _subassemblies, .. }
+            Leaves{..} -> Leaves{ _parts = deleteIndex ix _parts, .. }
+            Leaf{..} -> undefined
+    pure pbs{ the = the' }
+    where
+    deleteIndex i xs =
+        let (pre, post) = splitAt i xs
+        in pre ++ drop 1 post
+
+
+displayCode :: PbsCtx -> Text
+displayCode ctx = renderHier (hierCode ctx) <> renderFlat (flatCode ctx)
     where
     renderHier [] = ""
     renderHier hier = T.intercalate "." (T.pack . show <$> hier)
     renderFlat Nothing = ""
-    renderFlat (Just flat) = "-" <> padLeft '0' (length . show $ maxFlatCode info) (show flat)
+    renderFlat (Just flat) = "-" <> padLeft '0' (length . show $ maxFlatCode ctx) (show flat)
     padLeft c len str = T.pack $ replicate (fromIntegral len - length str) c <> str
