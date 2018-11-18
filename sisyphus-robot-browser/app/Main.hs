@@ -14,11 +14,7 @@ import Sisyphus.Reflex.PbsInput
 
 
 main :: IO ()
-main = mainWidgetWithHead elHead elBody
-
-elHead :: (MonadWidget t m) => m ()
-elHead = do
-    el "title" $ text "Sisyphus Robot"
+main = mainWidget elBody
 
 elBody :: forall t m. (MonadWidget t m) => m ()
 elBody = do
@@ -29,13 +25,12 @@ elBody = do
                 pbsIn <- el "table" $ do
                     el "thead" $ el "tr" $ do
                         el "th" $ blank
-                        el "th" $ blank
                         el "th" $ text "Code"
                         el "th" $ text "Name"
                     el "tbody" $ do
                         pbsInput $ PbsInputConfig pbs
                 let pbsDyn' = _pbsInput_value pbsIn :: Dynamic t Pbs
-            el "div" $ display pbsDyn'
+            -- el "div" $ display pbsDyn'
             pure pbsIn
         blank
     where
