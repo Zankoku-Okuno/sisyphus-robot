@@ -28,7 +28,7 @@ elBody = do
                         el "th" $ text "Code"
                         el "th" $ text "Name"
                     el "tbody" $ do
-                        pbsInput $ PbsInputConfig pbs
+                        pbsInput $ PbsInputConfig pbs (constDyn True)
                 let pbsDyn' = _pbsInput_value pbsIn :: Dynamic t Pbs
             -- el "div" $ display pbsDyn'
             pure pbsIn
